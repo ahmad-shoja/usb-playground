@@ -8,16 +8,10 @@ import {
   UsbSerial,
 } from "react-native-usb-serialport-for-android";
 import { PRODUCT_ID, VENDOR_ID } from "@/constants/Hardware";
-import { useEffect, useRef, useState } from "react";
-import {
-  LineChart,
-  BarChart,
-  PieChart,
-  ProgressChart,
-  ContributionGraph,
-  StackedBarChart,
-} from "react-native-chart-kit";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
+
 import * as ScreenOrientation from "expo-screen-orientation";
+import { Chart } from "./chart";
 
 export default function TabOneScreen() {
   useEffect(() => {
@@ -25,12 +19,8 @@ export default function TabOneScreen() {
   }, []);
 
   const [usbSerialport, setUsbSerialport] = useState<UsbSerial | null>(null);
-
-  const gaugeLen = 200;
-  const gauge = useRef<Array<number>>(new Array(gaugeLen).fill(0));
-  const chartRef = useRef<LineChart | null>(null);
-
-  const chartUpdateInterval = useRef<NodeJS.Timeout | null>(null);
+  const gaugeLen = 500;
+  const [data, setData] = useState<Array<number>>([]);
 
   const toNumber = (hexStr: string) => {
     const removeLeadingNewLine = (str: string) => str.replace(/^(0A)/, "");
@@ -49,7 +39,7 @@ export default function TabOneScreen() {
       .map((ch) => ch.charCodeAt(0).toString(16))
       .join("");
 
-  const open = async () => {
+  const open = useCallback(async () => {
     const devices = await UsbSerialManager.list();
     const thDevice = devices.find(
       ({ productId, vendorId }) =>
@@ -68,11 +58,13 @@ export default function TabOneScreen() {
 
       setUsbSerialport(lUsbSerialport);
 
-      const sub = lUsbSerialport.onReceived(({ data }) => {
-        const formatted = toNumber(data);
-        if (gauge.current.length > gaugeLen - 1)
-          gauge.current = gauge.current.slice(1);
-        gauge.current.push(formatted);
+      const sub = lUsbSerialport.onReceived(({ data: lData }) => {
+        const formatted = toNumber(lData);
+        setData((prev) => {
+          const lenExceed = prev.length > gaugeLen - 1;
+          const newVal = lenExceed ? prev.slice(1) : prev;
+          return [...newVal, formatted];
+        });
       });
 
       console.log("opened!");
@@ -82,84 +74,41 @@ export default function TabOneScreen() {
         // ...
       }
     }
-  };
-
-  const stopChartUpdate = () => {
-    if (chartUpdateInterval.current) clearInterval(chartUpdateInterval.current);
-  };
-  const startChartUpdate = () => {
-    stopChartUpdate();
-    chartUpdateInterval.current = setInterval(() => {
-      if (chartRef.current) {
-        chartRef.current;
-      }
-    }, 1000);
-  };
-
-  const show = async () => {
+  }, []);
+  const show = useCallback(async () => {
     if (!usbSerialport) console.log("not open!");
     else
       await usbSerialport
         .send(toHex("show"))
         .then((data) => {
-          startChartUpdate();
-          console.log("sent!");
+          console.log("showing!");
         })
         .catch(console.log);
-  };
-  const stop = async () => {
+  }, [usbSerialport]);
+
+  const stop = useCallback(async () => {
     if (!usbSerialport) console.log("not open!");
     else
       usbSerialport
         .send(toHex("stop"))
         .then(() => {
-          stopChartUpdate();
-          console.log("sent!");
+          console.log("stopped!");
         })
         .catch(console.log);
-  };
-  const close = async () => {
+  }, [usbSerialport]);
+
+  const close = useCallback(async () => {
     if (!usbSerialport) console.log("not open!");
     else
       usbSerialport
         .close()
         .then(() => console.log("closed!"))
         .catch(console.log);
-  };
+  }, [usbSerialport]);
+  const Buttons = memo(() => {
+    console.log("buttons re rendered");
 
-  return (
-    <View style={styles.container}>
-      <View style={{ flexGrow: 1, height: Dimensions.get("window").height }}>
-        <LineChart
-          ref={chartRef}
-          data={{
-            labels: Array.from({ length: 16 }, (_, i) => (i * 64).toString()),
-            datasets: [
-              {
-                data: gauge.current,
-              },
-            ],
-          }}
-          width={700} // from react-native
-          height={Dimensions.get("window").height}
-          yAxisLabel=""
-          yAxisSuffix=""
-          yAxisInterval={10} // optional, defaults to 1
-          chartConfig={{
-            decimalPlaces: 2, // optional, defaults to 2dp
-            color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
-            style: {
-              borderRadius: 16,
-            },
-            propsForDots: {
-              r: "1",
-              strokeWidth: "1",
-              stroke: "#ffffff",
-            },
-          }}
-          style={{}}
-        />
-      </View>
+    return (
       <View
         style={{
           flexDirection: "column",
@@ -174,6 +123,15 @@ export default function TabOneScreen() {
         <Button title="stop" onPress={stop} />
         <Button title="close" onPress={close} />
       </View>
+    );
+  });
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.chart}>
+        <Chart data={data} />
+      </View>
+      <Buttons />
     </View>
   );
 }
@@ -193,4 +151,5 @@ const styles = StyleSheet.create({
     height: 1,
     width: "80%",
   },
+  chart: { flexGrow: 1, height: Dimensions.get("window").height },
 });
