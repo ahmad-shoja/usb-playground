@@ -1,6 +1,7 @@
-import { Button, Dimensions, StyleSheet, TextBase } from "react-native";
-
-import { Text, View } from "../components/Themed";
+import StreamChart from "./StreamChart";
+import { lockAsync, OrientationLock } from "expo-screen-orientation";
+import { Button, Dimensions, StyleSheet } from "react-native";
+import { View } from "react-native";
 import {
   UsbSerialManager,
   Parity,
@@ -8,36 +9,14 @@ import {
   UsbSerial,
 } from "react-native-usb-serialport-for-android";
 import { PRODUCT_ID, VENDOR_ID } from "@/constants/Hardware";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
-
-import * as ScreenOrientation from "expo-screen-orientation";
-import { Chart } from "./chart";
-
-export default function TabOneScreen() {
-  useEffect(() => {
-    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-  }, []);
-
+import { memo, useCallback, useEffect, useState } from "react";
+import { toHex } from "./utility/hex";
+const Main = () => {
   const [usbSerialport, setUsbSerialport] = useState<UsbSerial | null>(null);
-  const gaugeLen = 500;
-  const [data, setData] = useState<Array<number>>([]);
 
-  const toNumber = (hexStr: string) => {
-    const removeLeadingNewLine = (str: string) => str.replace(/^(0A)/, "");
-    const removedTailingNulls = (str: string) => str.replace(/0+$/, "");
-
-    const ascii = removeLeadingNewLine(removedTailingNulls(hexStr))
-      .match(/.{2,2}/g)
-      ?.map((byte) => String.fromCharCode(parseInt(byte, 16)))
-      .join("");
-
-    return Number(ascii);
-  };
-  const toHex = (string: string) =>
-    string
-      .split("")
-      .map((ch) => ch.charCodeAt(0).toString(16))
-      .join("");
+  useEffect(() => {
+    lockAsync(OrientationLock.LANDSCAPE);
+  }, []);
 
   const open = useCallback(async () => {
     const devices = await UsbSerialManager.list();
@@ -58,23 +37,12 @@ export default function TabOneScreen() {
 
       setUsbSerialport(lUsbSerialport);
 
-      const sub = lUsbSerialport.onReceived(({ data: lData }) => {
-        const formatted = toNumber(lData);
-        setData((prev) => {
-          const lenExceed = prev.length > gaugeLen - 1;
-          const newVal = lenExceed ? prev.slice(1) : prev;
-          return [...newVal, formatted];
-        });
-      });
-
       console.log("opened!");
     } catch (err) {
       console.log(err);
-      if (err.code === Codes.DEVICE_NOT_FOND) {
-        // ...
-      }
     }
   }, []);
+
   const show = useCallback(async () => {
     if (!usbSerialport) console.log("not open!");
     else
@@ -105,6 +73,7 @@ export default function TabOneScreen() {
         .then(() => console.log("closed!"))
         .catch(console.log);
   }, [usbSerialport]);
+
   const Buttons = memo(() => {
     console.log("buttons re rendered");
 
@@ -115,7 +84,7 @@ export default function TabOneScreen() {
           gap: 4,
           flexShrink: 0,
           justifyContent: "center",
-          height: Dimensions.get("window").height,
+          height: 300,
         }}
       >
         <Button title="open" onPress={open} />
@@ -129,12 +98,12 @@ export default function TabOneScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.chart}>
-        <Chart data={data} />
+        <StreamChart usbSerial={usbSerialport} />
       </View>
       <Buttons />
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -153,3 +122,5 @@ const styles = StyleSheet.create({
   },
   chart: { flexGrow: 1, height: Dimensions.get("window").height },
 });
+
+export default Main;
